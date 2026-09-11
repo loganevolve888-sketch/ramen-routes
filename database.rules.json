@@ -1,0 +1,64 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "config": {
+      ".read": "auth != null",
+      ".write": false
+    },
+
+    "banned": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": false
+      }
+    },
+
+    "rate": {
+      "$uid": {
+        ".read": "auth != null && auth.uid === $uid",
+        ".write": "auth != null && auth.uid === $uid && newData.exists()",
+        ".validate": "newData.isNumber() && newData.val() === now && (!data.exists() || newData.val() > data.val() + 3000)"
+      }
+    },
+
+    "msg": {
+      "$zone": {
+        ".read": "auth != null && query.limitToLast != null && query.limitToLast <= 60",
+
+        "$id": {
+          ".write": "auth != null && $zone.matches(/^[a-z0-9][a-z0-9-]{1,23}$/) && !root.child('banned').child(auth.uid).exists() && root.child('config').child('chatEnabled').val() === true && ((!data.exists() && newData.exists()) || (data.exists() && !newData.exists() && data.child('t').val() < now - 43200000))",
+          ".validate": "newData.hasChildren(['u','n','c','x','t']) && newData.parent().parent().parent().child('rate').child(auth.uid).val() === now",
+
+          "u": { ".validate": "newData.isString() && newData.val() === auth.uid" },
+          "n": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
+          "c": { ".validate": "newData.isString() && newData.val().matches(/^#[0-9a-fA-F]{6}$/)" },
+          "x": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 200" },
+          "t": { ".validate": "newData.isNumber() && newData.val() === now" },
+          "m": { ".validate": "newData.isString() && newData.val().length <= 12" },
+          "k": { ".validate": "newData.isString() && (newData.val() === 'me' || newData.val() === 'buzz')" },
+          "$other": { ".validate": false }
+        }
+      }
+    },
+
+    "who": {
+      "$zone": {
+        ".read": "auth != null && query.limitToLast != null && query.limitToLast <= 80",
+
+        "$uid": {
+          ".write": "auth != null && $zone.matches(/^[a-z0-9][a-z0-9-]{1,23}$/) && !root.child('banned').child(auth.uid).exists() && (auth.uid === $uid || (data.exists() && !newData.exists() && data.child('t').val() < now - 180000))",
+          ".validate": "newData.hasChildren(['n','c','t'])",
+
+          "n": { ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20" },
+          "c": { ".validate": "newData.isString() && newData.val().matches(/^#[0-9a-fA-F]{6}$/)" },
+          "t": { ".validate": "newData.isNumber() && newData.val() === now" },
+          "m": { ".validate": "newData.isString() && newData.val().length <= 12" },
+          "s": { ".validate": "newData.isString() && newData.val().length <= 60" },
+          "$other": { ".validate": false }
+        }
+      }
+    }
+  }
+}
