@@ -1,0 +1,5 @@
+# Screenshots produced by .smoke-test.mjs
+.shots/
+
+# OS noise
+.DS_Store
