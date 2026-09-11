@@ -8,7 +8,8 @@ import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import { createServer } from 'node:http';
 
-const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+// Override with CHROME=<path> (CI installs its own Chrome and passes it in).
+const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -40,6 +41,9 @@ const chrome = spawn(CHROME, [
   '--no-first-run', '--no-default-browser-check',
   '--window-size=1280,1600',
   '--hide-scrollbars',
+  // Containerised CI runners have no user namespace for Chrome's sandbox and
+  // a tiny /dev/shm; both flags are standard there and unnecessary locally.
+  ...(process.env.CI ? ['--no-sandbox', '--disable-dev-shm-usage'] : []),
 ], { stdio: 'ignore' });
 
 async function targetUrl() {
