@@ -3902,7 +3902,7 @@
     onChildRemoved, query, limitToLast, serverTimestamp, onDisconnect,
     goOffline, goOnline
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBev9P4F-ZJstZ_qamX9gBpoYxT6b_IbFU",
@@ -4288,6 +4288,7 @@
     writeLS(AUTOJOIN_KEY, '1');
     setStatusText('connecting\u2026', false);
 
+    let cred;
     try {
       if(!app){
         app = initializeApp(firebaseConfig);
@@ -4295,7 +4296,7 @@
         auth = getAuth(app);
       }
       if(!socketOpen){ goOnline(db); socketOpen = true; }
-      await signInAnonymously(auth);
+      cred = await signInAnonymously(auth);
     } catch(err){
       setStatusText('offline', false);
       sysLine('Could not reach the lounge (' + (err && err.code ? err.code : 'network') + '). Everything else on this page still works.');
@@ -4305,17 +4306,16 @@
       return;
     }
 
-    onAuthStateChanged(auth, user => {
-      if(!user || !connected) return;
-      const fresh = uid !== user.uid;
-      uid = user.uid;
-      refreshIdentity();
-      if(fresh){
-        sysLine('Connected anonymously as ' + myName() + '. Type .help for commands.');
-        joinZone(zone, true);
-      }
-    });
-
+    // Join straight off the sign-in result. This used to hang on an
+    // onAuthStateChanged listener that only joined when the uid CHANGED —
+    // but anonymous auth reuses the same uid across reconnects, so after a
+    // disconnect the callback never joined again and the UI sat on
+    // "connecting…" forever. It also registered one more listener per
+    // connect() call, which stacked without bound.
+    uid = cred.user.uid;
+    refreshIdentity();
+    sysLine('Connected anonymously as ' + myName() + '. Type .help for commands.');
+    joinZone(zone, true);
     resetIdleTimer();
   }
 
@@ -4339,8 +4339,10 @@
     clearTimeout(idleTimer);
     idleTimer = setTimeout(() => {
       if(!connected) return;
-      sysLine('Disconnected after 15 minutes idle to free up a connection slot. Press connect to rejoin.');
       disconnect(false);
+      // disconnect() hides the chat panel, so a sysLine in the log would
+      // never be seen — the toast is the only surface left after that.
+      toast('Chat disconnected after 15 minutes idle to free a connection slot. Press connect to rejoin.');
     }, IDLE_DISCONNECT_MS);
   }
 
@@ -4860,7 +4862,16 @@
       }, HIDDEN_GRACE_MS);
     } else {
       clearTimeout(hiddenTimer);
-      if(!socketOpen){ goOnline(db); socketOpen = true; setStatusText('online \u2014 #' + zone, true); }
+      if(!socketOpen){
+        goOnline(db); socketOpen = true; setStatusText('online \u2014 #' + zone, true);
+        // goOffline() triggered the server-side onDisconnect, which deleted
+        // our presence row — and onDisconnect handlers are one-shot. Re-arm
+        // it and rewrite presence, or we stay invisible in the who list.
+        if(presenceRef){
+          onDisconnect(presenceRef).remove();
+          writePresence();
+        }
+      }
       resetIdleTimer();
     }
   });
