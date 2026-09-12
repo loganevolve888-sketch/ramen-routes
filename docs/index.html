@@ -1490,6 +1490,9 @@
         <button type="button" class="btn btn-secondary btn-sm" id="pinCenterBtn">
           <i class="fa-solid fa-thumbtack" aria-hidden="true"></i> Pin map centre
         </button>
+        <button type="button" class="btn btn-secondary btn-sm" id="atlasToggleBtn" aria-pressed="false">
+          <i class="fa-solid fa-earth-asia" aria-hidden="true"></i> <span id="atlasToggleLabel">Show Noodle Atlas</span>
+        </button>
         <button type="button" class="btn btn-primary" id="openModalBtn">
           <i class="fa-solid fa-bowl-food" aria-hidden="true"></i> Log a noodle stop
         </button>
@@ -1731,12 +1734,16 @@
       <i class="fa-solid fa-upload" aria-hidden="true"></i> Import backup
     </button>
     <input type="file" id="importInput" accept="application/json,.json" class="visually-hidden">
+    <button type="button" class="btn btn-ghost btn-sm" id="cloudBtn">
+      <i class="fa-solid fa-cloud" aria-hidden="true"></i> Cloud passport
+    </button>
     <button type="button" class="btn btn-ghost btn-sm" id="helpBtnFooter">
       <i class="fa-solid fa-circle-question" aria-hidden="true"></i> Help
     </button>
   </div>
   <div>SlurpQuest &copy; <span id="year"></span> &mdash; <span lang="ja">侍</span> Forged in broth &amp; discipline <span lang="ja">侍</span></div>
   <div class="storage-note" id="storageNote"></div>
+  <div class="storage-note" id="cloudNote" hidden></div>
 </footer>
 
 <!-- ============ ENTRY MODAL (log / edit) ============ -->
@@ -1835,6 +1842,15 @@
         <textarea id="memoryNotes" maxlength="600" placeholder="Tell the story of this slurp…"></textarea>
       </div>
 
+      <div class="form-row">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer;">
+          <input type="checkbox" id="shareAtlas"
+                 style="width:24px; height:24px; margin:0; accent-color:var(--crimson); flex:0 0 auto;">
+          <span>Share to the Noodle Atlas</span>
+        </label>
+        <p class="hint" style="margin:6px 0 0;">Publishes this stamp — name, place, ratings, notes, photo and your traveler tag — to every visitor&rsquo;s atlas map. Needs Cloud passport (footer) to be on.</p>
+      </div>
+
       <input type="hidden" id="entryLat">
       <input type="hidden" id="entryLng">
       <input type="hidden" id="entryId">
@@ -1927,12 +1943,37 @@
     </div>
     <div class="help-section">
       <h3>Your data</h3>
-      <p>Stamps live only in this browser&rsquo;s local storage — there is no account and nothing is uploaded. Clearing site data wipes your passport, so use <strong>Export passport</strong> in the footer to keep a backup, and <strong>Import backup</strong> to restore or move to another device.</p>
-      <p>The only thing that leaves your browser is chat messages and place searches (sent to OpenStreetMap&rsquo;s free geocoder).</p>
+      <p>Stamps live in this browser&rsquo;s local storage by default — nothing is uploaded until you turn on <strong>Cloud passport</strong> in the footer. Cloud sync keeps a copy of your stamps online so they survive this browser, and adding your email lets you open the same passport on any device. Without it, clearing site data wipes your passport, so use <strong>Export passport</strong> to keep a backup and <strong>Import backup</strong> to restore.</p>
+      <p>The only things that ever leave your browser are chat messages, place searches (sent to OpenStreetMap&rsquo;s free geocoder), and — only if you switch it on — cloud-synced stamps, including their photos. Uploaded photos get a public link, so only share stamps you are happy to have visible outside this browser.</p>
+      <p>Ticking <strong>Share to the Noodle Atlas</strong> on a stamp publishes it to every visitor&rsquo;s atlas map under your traveler tag. Untick it (or delete the stamp) and it comes straight back down.</p>
     </div>
     <div class="modal-actions">
       <button type="button" class="btn btn-primary" id="helpDoneBtn">Got it</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ CLOUD PASSPORT (Supabase sync) ============ -->
+<div class="modal-overlay" id="cloudOverlay" data-dialog="cloud">
+  <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="cloudTitle" aria-describedby="cloudIntro">
+    <button class="modal-close" id="cloudCloseBtn" aria-label="Close dialog"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+    <h2 id="cloudTitle"><i class="fa-solid fa-cloud" aria-hidden="true"></i> Cloud passport</h2>
+    <p class="dialog-message" id="cloudIntro">Your passport lives only in this browser. Turn on cloud sync to keep it safe and open it on other devices.</p>
+    <form id="cloudForm" novalidate>
+      <div class="form-row" id="cloudEmailRow">
+        <label for="cloudEmail">Email</label>
+        <input type="email" id="cloudEmail" maxlength="120" autocomplete="email"
+               enterkeyhint="send" aria-describedby="err-cloudEmail"
+               placeholder="you@example.com">
+        <p class="field-error" id="err-cloudEmail" role="alert"></p>
+      </div>
+      <p class="dialog-message" id="cloudMsg" role="status"></p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="cloudSignOutBtn" hidden>Sign out</button>
+        <button type="button" class="btn btn-secondary" id="cloudGuestBtn" hidden>Sync without email</button>
+        <button type="submit" class="btn btn-primary" id="cloudSendBtn">Email me a sign-in link</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -2132,7 +2173,7 @@
   window.__slurpTraveler = traveler;
 
   let questGoal = loadGoal();
-  let map, markersLayer, pendingMarker;
+  let map, markersLayer, pendingMarker, atlasLayer;
   let pendingCoords = null;
   let editingId = null;
   const stars = { richness:0, texture:0, vibe:0 };
@@ -2793,6 +2834,7 @@
       $('noodleType').value = NOODLE_COLORS[e.type] ? e.type : 'Other';
       $('visitDate').value = e.date || todayISO();
       $('memoryNotes').value = e.notes || '';
+      $('shareAtlas').checked = Boolean(e.shared);
       $('entryLat').value = e.lat != null ? e.lat : '';
       $('entryLng').value = e.lng != null ? e.lng : '';
       if(e.photo && !/^https:\/\/placehold\.co/.test(e.photo)){
@@ -2907,6 +2949,7 @@
       vibe: stars.vibe,
       notes: $('memoryNotes').value.trim(),
       date: $('visitDate').value,
+      shared: $('shareAtlas').checked,
       travelerId: traveler.id,
       travelerName: traveler.name,
       travelerColor: traveler.color
@@ -2915,15 +2958,20 @@
     const unlockedBefore = new Set(BADGE_DEFS.filter(b => b.check(entries)).map(b => b.id));
     const isEdit = Boolean(editingId);
 
+    let finalEntry = payload;
     if(isEdit){
       const idx = entries.findIndex(x => x.id === editingId);
-      if(idx > -1) entries[idx] = Object.assign({}, entries[idx], payload);
+      if(idx > -1){ entries[idx] = Object.assign({}, entries[idx], payload); finalEntry = entries[idx]; }
     } else {
       payload.id = 'entry-' + Date.now().toString(36);
       entries.push(payload);
     }
 
     const saved = saveEntries();
+    // Tell the cloud module (a separate <script type="module"> below) even when
+    // the local write failed — the cloud copy is the second chance when
+    // localStorage is out of quota.
+    window.dispatchEvent(new CustomEvent('slurp:entrySaved', { detail: { entry: finalEntry } }));
     renderMarkers();
     renderLegend();
     renderAll();
@@ -3104,6 +3152,7 @@
     const removed = entries[index];
     entries.splice(index, 1);
     saveEntries();
+    window.dispatchEvent(new CustomEvent('slurp:entryDeleted', { detail: { id: removed.id } }));
     renderMarkers();
     renderLegend();
     renderAll();
@@ -3115,6 +3164,7 @@
       onAction(){
         entries.splice(Math.min(index, entries.length), 0, removed);
         saveEntries();
+        window.dispatchEvent(new CustomEvent('slurp:entrySaved', { detail: { entry: removed } }));
         renderMarkers();
         renderLegend();
         renderAll();
@@ -3614,6 +3664,7 @@
       entries = entries.concat(fresh);
       if(data.questGoal > 0){ questGoal = Math.floor(data.questGoal); saveGoal(questGoal); }
       saveEntries();
+      window.dispatchEvent(new CustomEvent('slurp:entriesImported', { detail: { count: fresh.length } }));
       renderMarkers();
       renderLegend();
       renderAll();
@@ -3849,7 +3900,102 @@
   }
 
   /* =========================================================================
-     22. INIT
+     22. CLOUD BRIDGE — the Supabase sync module lives in its own
+     <script type="module"> below and cannot see inside this IIFE, so this is
+     the narrow, deliberate surface it gets. Outbound changes travel as
+     'slurp:entrySaved' / 'slurp:entryDeleted' / 'slurp:entriesImported' /
+     'slurp:travelerRenamed' events; inbound cloud state arrives through the
+     two merge functions here.
+     ========================================================================= */
+
+  window.slurpApp = {
+    getEntries: () => entries.slice(),
+    getTraveler: () => Object.assign({}, traveler),
+    toast: (msg, opts) => showToast(msg, opts),
+    confirm: (opts) => confirmDialog(opts),
+    openDialog: (el, opts) => openDialog(el, opts),
+    closeDialog: (el) => closeDialog(el),
+    setFieldError: (input, errId, msg) => setFieldError(input, errId, msg),
+    clearFieldError: (input, errId) => clearFieldError(input, errId),
+
+    /* Fold rows pulled from the cloud into the local passport, then repaint.
+       Photos are the one field where local wins: camera shots are data-URLs
+       that never sync (until phase 2 moves them to real storage), so a blank
+       cloud photo must not blow away the local one. */
+    mergeCloudEntries(cloudEntries, removeIds){
+      const byId = new Map(entries.map(e => [e.id, e]));
+      (removeIds || []).forEach(id => byId.delete(id));
+      (cloudEntries || []).forEach(ce => {
+        const local = byId.get(ce.id);
+        if(local && local.photo && !ce.photo) ce.photo = local.photo;
+        const merged = local ? Object.assign({}, local, ce) : ce;
+        if(!merged.photo) merged.photo = placeholderImg(merged.type);
+        byId.set(merged.id, merged);
+      });
+      entries = Array.from(byId.values());
+      saveEntries();
+      renderMarkers();
+      renderLegend();
+      renderAll();
+    },
+
+    /* The cloud profile wins over the local traveler tag, so a rename made on
+       one device shows up on the next. Stamps carry a denormalized copy of the
+       name for the leaderboard, so relabel them the same way the traveler
+       dialog does. */
+    adoptCloudTraveler(remote){
+      if(!remote || !remote.name) return;
+      if(remote.name === traveler.name && remote.color === traveler.color) return;
+      traveler.name = String(remote.name).slice(0, 40);
+      if(remote.color) traveler.color = remote.color;
+      saveTraveler();
+      renderTravelerTag();
+      entries.forEach(en => {
+        if(en.travelerId === traveler.id){
+          en.travelerName = traveler.name;
+          en.travelerColor = traveler.color;
+        }
+      });
+      saveEntries();
+      renderAll();
+    },
+
+    /* The Noodle Atlas layer: other travelers' shared stamps, drawn as round
+       dots in the author's colour so they read differently from your own
+       teardrop pins. Every remote string goes through escapeHtml — same rule
+       as the chat: no stranger's text becomes markup. */
+    showAtlasPins(pins){
+      if(!atlasLayer) atlasLayer = L.layerGroup();
+      atlasLayer.clearLayers();
+      let placed = 0;
+      (pins || []).forEach(p => {
+        if(p.lat == null || p.lng == null) return;
+        placed++;
+        const color = /^#[0-9a-f]{6}$/i.test(p.authorColor || '') ? p.authorColor : '#9aa0ad';
+        const icon = L.divIcon({
+          className: '',
+          html: `<div style="background:${color};width:18px;height:18px;border-radius:50%;border:2px solid rgba(255,255,255,0.85);box-shadow:0 0 8px ${color}99, 1px 1px 4px rgba(0,0,0,.6);"></div>`,
+          iconSize: [18,18],
+          iconAnchor: [9,9]
+        });
+        const marker = L.marker([p.lat, p.lng], { icon, title: p.name }).addTo(atlasLayer);
+        marker.bindPopup(`
+          <div class="pop-title">${escapeHtml(p.name)}</div>
+          <div class="pop-meta">${escapeHtml(p.location)} &middot; ${escapeHtml(p.type)} &middot; ${renderStarString((Number(p.richness)+Number(p.texture)+Number(p.vibe))/3)}</div>
+          <div class="pop-meta">by <span style="color:${color};">${escapeHtml(p.authorName)}</span>${p.visitedOn ? ' &middot; ' + escapeHtml(p.visitedOn) : ''}</div>
+          ${p.notes ? `<div class="pop-meta">${escapeHtml(String(p.notes).slice(0,140))}</div>` : ''}
+        `);
+      });
+      atlasLayer.addTo(map);
+      return placed;
+    },
+    hideAtlasPins(){
+      if(atlasLayer) map.removeLayer(atlasLayer);
+    }
+  };
+
+  /* =========================================================================
+     23. INIT
      ========================================================================= */
 
   $('year').textContent = new Date().getFullYear();
@@ -4899,6 +5045,631 @@
 
   // Returning visitors who already opted in skip the gate.
   if(readLS(AUTOJOIN_KEY, '') === '1') connect();
+</script>
+
+<!-- ---------- CLOUD PASSPORT (Supabase Postgres + Auth) ---------- -->
+<script type="module">
+  /* =====================================================================
+     CLOUD PASSPORT — opt-in sync of the passport to Supabase.
+
+     Design rules this module follows, and why:
+
+     1. NOTHING OPENS UNTIL ASKED — same rule as the chat. No account is
+        created and nothing is uploaded until the user presses a button in
+        the Cloud passport dialog. The help text promises this.
+
+     2. ANONYMOUS-FIRST, UPGRADE IN PLACE. "Sync without email" mints an
+        anonymous Supabase user; linking an email later (updateUser) keeps
+        the same uid, so every synced stamp survives the upgrade with no
+        migration. With an email up front we skip the anonymous step and
+        send a magic link instead (signInWithOtp), which also signs an
+        existing account in on a new device.
+
+     3. LOCALSTORAGE STAYS THE FAST PATH. The app boots from localStorage
+        exactly as before; the cloud reconciles afterwards. The anon key
+        below is public by design — Row Level Security in
+        supabase/schema.sql is the boundary, playing the same role
+        database.rules.json plays for the chat.
+
+     4. RECONCILE, DON'T TRUST MEMORY. A per-account ledger in localStorage
+        records which entry ids are known to be in the cloud. On sync:
+        local id missing from the cloud + in the ledger = deleted on
+        another device (delete locally); missing + not in the ledger =
+        created offline (push it up). Failed writes need no retry queue —
+        the next reconcile reaches the same end state. The one exception
+        is deletes, which would be resurrected by a pull, so pending
+        deletes are persisted until the cloud confirms them.
+
+     5. DEMO STAMPS STAY LOCAL. The three seeded 'default-*' entries are
+        browser-local demo data; syncing them would resurrect them across
+        devices forever.
+
+     6. PHOTOS BECOME LINKS. Camera shots arrive as base64 data-URLs (the
+        thing that used to blow the localStorage quota). Once sync is on
+        they upload to the public 'photos' bucket at {uid}/{entryId}.jpg
+        and the entry keeps only the CDN URL — locally too, which is what
+        finally shrinks localStorage. The bucket config enforces size and
+        MIME type server-side; supabase/storage.sql confines writes to
+        your own folder. Object removal after a delete waits out the undo
+        toast, because a restored stamp must still have its photo.
+     ===================================================================== */
+
+  import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+  const SUPABASE_URL = "https://cckvflhmjaxearsmvrfv.supabase.co";
+  const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNja3ZmbGhtamF4ZWFyc212cmZ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODkyMjI5NjYsImV4cCI6MjEwNDc5ODk2Nn0.hTpwixMyGHXJWbkOVYv51-pp-5Y12z8_BEGakk4wj1U";
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const app = window.slurpApp;
+  const $ = (id) => document.getElementById(id);
+
+  /* ------------------------------------------------------------ ledgers */
+
+  const LEDGER_PREFIX  = 'slurpquest_cloud_ids_v1_';
+  const PENDING_PREFIX = 'slurpquest_cloud_pending_del_v1_';
+
+  function readSet(key){
+    try{ return new Set(JSON.parse(localStorage.getItem(key) || '[]')); }
+    catch(e){ return new Set(); }
+  }
+  function writeSet(key, set){
+    try{ localStorage.setItem(key, JSON.stringify([...set])); }catch(e){ /* full */ }
+  }
+  const readLedger   = (uid) => readSet(LEDGER_PREFIX + uid);
+  const writeLedger  = (uid, s) => writeSet(LEDGER_PREFIX + uid, s);
+  const readPending  = (uid) => readSet(PENDING_PREFIX + uid);
+  const writePending = (uid, s) => writeSet(PENDING_PREFIX + uid, s);
+
+  const neverSync = (id) => String(id).startsWith('default-');
+
+  /* -------------------------------------------------------- row mapping */
+
+  function toRow(e){
+    const photoIsLink = typeof e.photo === 'string'
+      && /^https?:\/\//i.test(e.photo) && e.photo.length <= 500;
+    return {
+      id: String(e.id),
+      name: e.name,
+      location: e.location,
+      type: e.type,
+      photo_url: photoIsLink ? e.photo : null,   // data-URLs upload separately, then become links
+      lat: (e.lat == null ? null : Number(e.lat)),
+      lng: (e.lng == null ? null : Number(e.lng)),
+      richness: Number(e.richness),
+      texture: Number(e.texture),
+      vibe: Number(e.vibe),
+      notes: e.notes || '',
+      visited_on: e.date || null
+    };
+  }
+
+  function fromRow(r, t, shared){
+    return {
+      id: r.id, name: r.name, location: r.location, type: r.type,
+      photo: r.photo_url || '',
+      lat: r.lat, lng: r.lng,
+      richness: r.richness, texture: r.texture, vibe: r.vibe,
+      notes: r.notes || '', date: r.visited_on || '',
+      shared: shared.has(r.id),
+      travelerId: t.id, travelerName: t.name, travelerColor: t.color
+    };
+  }
+
+  /* ---------------------------------------------------------------- atlas */
+
+  // Which of MY entries are currently published. Populated by syncNow, kept
+  // current by the share/unshare paths, so a save without a share change
+  // costs no extra request. The cloud copy wins on reconcile.
+  let sharedIds = new Set();
+
+  function atlasRowFrom(entry){
+    const t = app.getTraveler();
+    const row = toRow(entry);
+    return {
+      entry_id: row.id, name: row.name, location: row.location, type: row.type,
+      photo_url: row.photo_url, lat: row.lat, lng: row.lng,
+      richness: row.richness, texture: row.texture, vibe: row.vibe,
+      notes: row.notes, visited_on: row.visited_on,
+      author_name: t.name, author_color: t.color
+    };
+  }
+
+  // The entries row must exist first — the atlas has a foreign key onto it,
+  // which is also what auto-unshares a deleted stamp via cascade.
+  async function pushAtlas(entry){
+    const { error } = await supabase.from('atlas')
+      .upsert(atlasRowFrom(entry), { onConflict: 'user_id,entry_id' });
+    if(error){ console.warn('[cloud] atlas share failed', error); return false; }
+    sharedIds.add(String(entry.id));
+    return true;
+  }
+
+  async function dropAtlas(id){
+    const { error } = await supabase.from('atlas')
+      .delete().eq('user_id', session.user.id).eq('entry_id', String(id));
+    if(error){ console.warn('[cloud] atlas unshare failed', error); return false; }
+    sharedIds.delete(String(id));
+    return true;
+  }
+
+  /* --------------------------------------------------------------- photos */
+
+  const isDataUrl = (p) => typeof p === 'string' && p.startsWith('data:image/');
+  const photoPath = (uid, id) => `${uid}/${id}.jpg`;
+
+  function dataUrlToBlob(dataUrl){
+    const b64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    const bytes = atob(b64);
+    const arr = new Uint8Array(bytes.length);
+    for(let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i);
+    return new Blob([arr], { type: 'image/jpeg' });
+  }
+
+  /* Returns the public CDN URL. The ?v= cache-buster matters because an edit
+     overwrites the same path, and the old bytes would otherwise live on in the
+     browser cache. */
+  async function uploadPhoto(uid, entryId, dataUrl){
+    const path = photoPath(uid, entryId);
+    const { error } = await supabase.storage.from('photos')
+      .upload(path, dataUrlToBlob(dataUrl), { contentType: 'image/jpeg', upsert: true });
+    if(error) throw error;
+    const { data } = supabase.storage.from('photos').getPublicUrl(path);
+    return data.publicUrl + '?v=' + Date.now();
+  }
+
+  // Object removal is delayed past the 8-second Undo toast; a restored stamp
+  // must still point at a live photo. Best-effort: a tab closed inside the
+  // window leaks one orphan object, which the row's pending-delete sweep in
+  // syncNow cleans up on the next visit.
+  const photoRemoveTimers = new Map();
+
+  function scheduleRemovePhoto(uid, id){
+    clearTimeout(photoRemoveTimers.get(id));
+    photoRemoveTimers.set(id, setTimeout(() => {
+      photoRemoveTimers.delete(id);
+      supabase.storage.from('photos').remove([photoPath(uid, id)]); // ignore result
+    }, 10000));
+  }
+  function cancelRemovePhoto(id){
+    clearTimeout(photoRemoveTimers.get(id));
+    photoRemoveTimers.delete(id);
+  }
+
+  /* ------------------------------------------------------------- session */
+
+  let session = null;
+  let syncing = false;
+  let lastSyncAt = 0;
+  let cloudCount = null;
+
+  const isAnon = () => Boolean(session && session.user && session.user.is_anonymous);
+  const sessionEmail = () => (session && session.user && session.user.email) || '';
+
+  /* --------------------------------------------------------------- sync */
+
+  /* removePhotos is only true from syncNow — a reconcile happens long after
+     any undo window, so it is also the sweep that catches photo orphans left
+     by a tab that closed mid-delete. The immediate delete path keeps photos
+     alive until the undo toast has expired. */
+  async function flushPendingDeletes(uid, removePhotos){
+    const pending = readPending(uid);
+    if(!pending.size) return;
+    if(removePhotos){
+      supabase.storage.from('photos').remove([...pending].map(id => photoPath(uid, id))); // ignore result
+    }
+    const { error } = await supabase.from('entries')
+      .delete().eq('user_id', uid).in('id', [...pending]);
+    if(error) throw error;
+    const ledger = readLedger(uid);
+    pending.forEach(id => ledger.delete(id));
+    writeLedger(uid, ledger);
+    pending.clear();
+    writePending(uid, pending);
+  }
+
+  async function syncNow({ force = false, announce = false } = {}){
+    if(!session || syncing) return;
+    if(!force && Date.now() - lastSyncAt < 30000) return;
+    syncing = true;
+    try{
+      const uid = session.user.id;
+
+      await flushPendingDeletes(uid, true);
+
+      // Profile: the cloud copy wins so renames follow you between devices;
+      // if the cloud has none yet, publish the local traveler tag.
+      const { data: prof, error: profErr } = await supabase
+        .from('profiles').select('name,color').eq('id', uid).maybeSingle();
+      if(profErr) throw profErr;
+      const t = app.getTraveler();
+      if(prof) app.adoptCloudTraveler(prof);
+      else{
+        const { error } = await supabase.from('profiles')
+          .upsert({ id: uid, name: t.name, color: t.color });
+        if(error) throw error;
+      }
+
+      const { data: rows, error: rowErr } = await supabase
+        .from('entries').select('*').order('created_at');
+      if(rowErr) throw rowErr;
+
+      const { data: atlasRows, error: atlasErr } = await supabase
+        .from('atlas').select('entry_id').eq('user_id', uid);
+      if(atlasErr) throw atlasErr;
+      sharedIds = new Set(atlasRows.map(r => String(r.entry_id)));
+
+      const ledger = readLedger(uid);
+      const remoteIds = new Set(rows.map(r => r.id));
+      const toPush = [];
+      const removeIds = [];
+      app.getEntries().forEach(e => {
+        if(neverSync(e.id) || remoteIds.has(e.id)) return;
+        if(ledger.has(e.id)) removeIds.push(e.id);   // deleted on another device
+        else toPush.push(toRow(e));                  // created offline / pre-sync
+      });
+
+      if(toPush.length){
+        const { error } = await supabase.from('entries')
+          .upsert(toPush, { onConflict: 'user_id,id' });
+        if(error) throw error;
+        toPush.forEach(r => remoteIds.add(r.id));
+      }
+
+      const tNow = app.getTraveler();
+      app.mergeCloudEntries(rows.map(r => fromRow(r, tNow, sharedIds)), removeIds);
+      writeLedger(uid, remoteIds);
+      cloudCount = remoteIds.size;
+      lastSyncAt = Date.now();
+      updateUi();
+
+      // Publish shares made before sync was on (or that failed earlier). Only
+      // local-only entries can still differ here — for anything in the cloud,
+      // the merge above already adopted the cloud's shared state.
+      for(const e of app.getEntries()){
+        if(neverSync(e.id)) continue;
+        if(e.shared && !sharedIds.has(String(e.id))) await pushAtlas(e);
+      }
+
+      // Migrate camera shots still sitting in localStorage as data-URLs —
+      // both pre-sync history and any earlier upload that failed. Each one
+      // becomes a CDN link locally as well, which is what frees the quota.
+      for(const e of app.getEntries()){
+        if(neverSync(e.id) || !isDataUrl(e.photo)) continue;
+        try{
+          const url = await uploadPhoto(uid, e.id, e.photo);
+          const updated = Object.assign({}, e, { photo: url });
+          const { error } = await supabase.from('entries')
+            .upsert(toRow(updated), { onConflict: 'user_id,id' });
+          if(error) throw error;
+          app.mergeCloudEntries([updated]);
+          // A shared stamp's atlas copy was published before the photo had a
+          // link; refresh it so the atlas shows the picture too.
+          if(sharedIds.has(String(updated.id))) await pushAtlas(updated);
+        }catch(err){
+          console.warn('[cloud] photo migration failed for ' + e.id + ', will retry next sync', err);
+        }
+      }
+      if(announce){
+        app.toast(`Cloud passport synced — ${cloudCount} stamp${cloudCount===1?'':'s'} online.`, { icon:'fa-cloud' });
+      }
+    }catch(err){
+      console.warn('[cloud] sync failed', err);
+      if(announce){
+        app.toast('Cloud sync hit a snag — your stamps are still saved in this browser.',
+          { kind:'error', icon:'fa-triangle-exclamation' });
+      }
+    }finally{
+      syncing = false;
+    }
+  }
+
+  /* --------------------------------------------- write-through handlers */
+
+  window.addEventListener('slurp:entrySaved', async (e) => {
+    if(!session){
+      if(e.detail.entry.shared){
+        app.toast('To publish to the Noodle Atlas, turn on Cloud passport in the footer first.',
+          { icon:'fa-earth-asia', duration: 8000 });
+      }
+      return;
+    }
+    let entry = e.detail.entry;
+    if(neverSync(entry.id)) return;
+    const uid = session.user.id;
+    cancelRemovePhoto(entry.id);   // an undo must keep its photo object alive
+    const pending = readPending(uid);
+    if(pending.delete(entry.id)) writePending(uid, pending);   // an undo cancels the delete
+
+    if(isDataUrl(entry.photo)){
+      try{
+        const url = await uploadPhoto(uid, entry.id, entry.photo);
+        entry = Object.assign({}, entry, { photo: url });
+        app.mergeCloudEntries([entry]);   // swap the fat data-URL for a link locally too
+      }catch(err){
+        // Row still syncs (photo_url null); the migration pass in syncNow retries.
+        console.warn('[cloud] photo upload failed, keeping it local for now', err);
+      }
+    }
+
+    const { error } = await supabase.from('entries')
+      .upsert(toRow(entry), { onConflict: 'user_id,id' });
+    if(error){
+      console.warn('[cloud] save failed, will retry on next sync', error);
+      return; // reconcile picks it up: not in ledger, so it gets pushed
+    }
+    const ledger = readLedger(uid);
+    ledger.add(String(entry.id));
+    writeLedger(uid, ledger);
+    cloudCount = ledger.size;
+    updateUi();
+
+    // Atlas share/unshare, now that the entries row (the FK target) exists.
+    if(entry.shared && !sharedIds.has(String(entry.id))){
+      const ok = await pushAtlas(entry);
+      app.toast(ok ? 'Stamp published to the Noodle Atlas.' : 'Could not publish to the Atlas — it will retry on the next sync.',
+        { icon: 'fa-earth-asia', kind: ok ? undefined : 'error' });
+    } else if(entry.shared && sharedIds.has(String(entry.id))){
+      await pushAtlas(entry);   // already shared: keep the public copy current
+    } else if(!entry.shared && sharedIds.has(String(entry.id))){
+      const ok = await dropAtlas(entry.id);
+      if(ok) app.toast('Stamp removed from the Noodle Atlas.', { icon:'fa-earth-asia' });
+    }
+  });
+
+  window.addEventListener('slurp:entryDeleted', async (e) => {
+    if(!session) return;
+    const id = String(e.detail.id);
+    if(neverSync(id)) return;
+    const uid = session.user.id;
+    const pending = readPending(uid);
+    pending.add(id);
+    writePending(uid, pending);   // survives a failed request and a page reload
+    scheduleRemovePhoto(uid, id); // after the undo toast has expired
+    try{ await flushPendingDeletes(uid, false); }
+    catch(err){ console.warn('[cloud] delete failed, will retry on next sync', err); }
+    sharedIds.delete(id);   // the atlas row cascades away with the entries row
+    cloudCount = readLedger(uid).size;
+    updateUi();
+  });
+
+  window.addEventListener('slurp:entriesImported', () => syncNow({ force: true }));
+
+  window.addEventListener('slurp:travelerRenamed', async (e) => {
+    if(!session) return;
+    const t = e.detail;
+    const { error } = await supabase.from('profiles')
+      .upsert({ id: session.user.id, name: t.name, color: t.color });
+    if(error) console.warn('[cloud] profile save failed', error);
+    // Shared stamps carry a public copy of the tag — relabel those too.
+    const { error: atlasError } = await supabase.from('atlas')
+      .update({ author_name: t.name, author_color: t.color })
+      .eq('user_id', session.user.id);
+    if(atlasError) console.warn('[cloud] atlas relabel failed', atlasError);
+  });
+
+  window.addEventListener('online', () => syncNow({ force: true }));
+
+  /* ------------------------------------------------------------------ UI */
+
+  const overlay = $('cloudOverlay');
+  const emailInput = $('cloudEmail');
+
+  function updateUi(){
+    const note = $('cloudNote');
+    if(!session){
+      note.hidden = true;
+      return;
+    }
+    note.hidden = false;
+    note.textContent = isAnon()
+      ? `Cloud sync on (guest account, this browser only)${cloudCount != null ? ` · ${cloudCount} stamp${cloudCount===1?'':'s'} online` : ''} — add an email to sign in anywhere`
+      : `Cloud sync on as ${sessionEmail()}${cloudCount != null ? ` · ${cloudCount} stamp${cloudCount===1?'':'s'} online` : ''}`;
+  }
+
+  function setMsg(text){ $('cloudMsg').textContent = text || ''; }
+
+  function refreshDialog(){
+    const intro = $('cloudIntro');
+    const emailRow = $('cloudEmailRow');
+    const sendBtn = $('cloudSendBtn');
+    const guestBtn = $('cloudGuestBtn');
+    const outBtn = $('cloudSignOutBtn');
+    setMsg('');
+    app.clearFieldError(emailInput, 'err-cloudEmail');
+
+    if(!session){
+      intro.textContent = 'Your passport lives only in this browser. Enter your email for a sign-in link — new stamps then sync automatically and follow you to any device. Or sync without an email to protect just this browser.';
+      emailRow.hidden = false; sendBtn.hidden = false;
+      guestBtn.hidden = false; outBtn.hidden = true;
+      sendBtn.textContent = 'Email me a sign-in link';
+    } else if(isAnon()){
+      intro.textContent = 'Cloud sync is on as a guest: your stamps are backed up, but only this browser can reach them. Add your email to make the passport permanent and sign in anywhere.';
+      emailRow.hidden = false; sendBtn.hidden = false;
+      guestBtn.hidden = true; outBtn.hidden = false;
+      sendBtn.textContent = 'Link my email';
+    } else {
+      intro.textContent = `Signed in as ${sessionEmail()}. Your stamps sync automatically; use the same email on any device to open this passport.`;
+      emailRow.hidden = true; sendBtn.hidden = true;
+      guestBtn.hidden = true; outBtn.hidden = false;
+    }
+  }
+
+  function busy(on){
+    ['cloudSendBtn','cloudGuestBtn','cloudSignOutBtn'].forEach(id => { $(id).disabled = on; });
+  }
+
+  $('cloudBtn').addEventListener('click', () => {
+    refreshDialog();
+    app.openDialog(overlay, { focus: session ? $('cloudCloseBtn') : emailInput });
+  });
+  $('cloudCloseBtn').addEventListener('click', () => app.closeDialog(overlay));
+
+  // The magic-link landing page. Site URL / additional redirect URLs in the
+  // Supabase dashboard must cover this origin or the link will bounce.
+  const redirectTo = location.origin + location.pathname;
+
+  $('cloudForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const email = emailInput.value.trim();
+    if(!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)){
+      app.setFieldError(emailInput, 'err-cloudEmail', 'Enter a valid email address.');
+      emailInput.focus();
+      return;
+    }
+    app.clearFieldError(emailInput, 'err-cloudEmail');
+    busy(true);
+    try{
+      if(!session){
+        // New device or first time: magic link signs an existing account in,
+        // or creates a fresh permanent one. Local stamps push up afterwards.
+        const { error } = await supabase.auth.signInWithOtp({
+          email, options: { emailRedirectTo: redirectTo }
+        });
+        if(error) throw error;
+        setMsg(`Link sent to ${email} — open it in this browser and your passport comes online.`);
+      } else {
+        // Anonymous session: linking keeps the same uid, so everything already
+        // synced simply becomes permanent.
+        const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: redirectTo });
+        if(error){
+          if(/already|exists|registered/i.test(error.message || '')){
+            const ok = await app.confirm({
+              title: 'That email already has a passport',
+              message: 'Sign in to it instead? The stamps in this browser will be added to that passport.',
+              confirmLabel: 'Send sign-in link',
+              danger: false
+            });
+            if(ok){
+              const { error: otpErr } = await supabase.auth.signInWithOtp({
+                email, options: { emailRedirectTo: redirectTo }
+              });
+              if(otpErr) throw otpErr;
+              setMsg(`Link sent to ${email} — open it in this browser to switch to that passport.`);
+            }
+            return;
+          }
+          throw error;
+        }
+        setMsg(`Confirmation sent to ${email} — click it to make your cloud passport permanent.`);
+      }
+    }catch(err){
+      console.warn('[cloud] email flow failed', err);
+      setMsg('Could not send the email. Wait a minute and try again.');
+    }finally{
+      busy(false);
+    }
+  });
+
+  $('cloudGuestBtn').addEventListener('click', async () => {
+    busy(true);
+    try{
+      const { data, error } = await supabase.auth.signInAnonymously();
+      if(error) throw error;
+      session = data.session;
+      refreshDialog();
+      setMsg('Guest sync is on. Uploading your stamps…');
+      await syncNow({ force: true, announce: true });
+      setMsg('Guest sync is on — stamps in this browser are backed up.');
+    }catch(err){
+      console.warn('[cloud] anonymous sign-in failed', err);
+      setMsg('Could not reach the cloud. Your stamps are still safe in this browser.');
+    }finally{
+      busy(false);
+    }
+  });
+
+  $('cloudSignOutBtn').addEventListener('click', async () => {
+    if(isAnon()){
+      const ok = await app.confirm({
+        title: 'Sign out of the guest passport?',
+        message: 'A guest account cannot be signed back into — the cloud copy becomes unreachable. Your stamps stay in this browser.',
+        confirmLabel: 'Sign out'
+      });
+      if(!ok) return;
+    }
+    busy(true);
+    try{
+      await supabase.auth.signOut();
+      cloudCount = null;
+      setMsg('Signed out. Stamps stay in this browser only from here on.');
+      refreshDialog();
+      updateUi();
+    }catch(err){
+      console.warn('[cloud] sign-out failed', err);
+      setMsg('Could not sign out — check your connection and try again.');
+    }finally{
+      busy(false);
+    }
+  });
+
+  /* ------------------------------------------------------- atlas browsing */
+
+  // Reading the atlas needs no account (public-read policy) — but it also
+  // opens no connection until the button is pressed, chat-style. Your own
+  // shared stamps are filtered out: they are already on the map as teardrops.
+  let atlasOn = false;
+  const atlasBtn = $('atlasToggleBtn');
+
+  atlasBtn.addEventListener('click', async () => {
+    if(atlasOn){
+      app.hideAtlasPins();
+      atlasOn = false;
+      atlasBtn.setAttribute('aria-pressed', 'false');
+      $('atlasToggleLabel').textContent = 'Show Noodle Atlas';
+      return;
+    }
+    atlasBtn.disabled = true;
+    try{
+      const { data, error } = await supabase.from('atlas')
+        .select('user_id,name,location,type,lat,lng,richness,texture,vibe,notes,visited_on,author_name,author_color')
+        .order('shared_at', { ascending: false })
+        .limit(200);
+      if(error) throw error;
+      const myUid = session ? session.user.id : null;
+      const pins = data
+        .filter(r => r.user_id !== myUid)
+        .map(r => ({
+          name: r.name, location: r.location, type: r.type,
+          lat: r.lat, lng: r.lng,
+          richness: r.richness, texture: r.texture, vibe: r.vibe,
+          notes: r.notes, visitedOn: r.visited_on,
+          authorName: r.author_name, authorColor: r.author_color
+        }));
+      const placed = app.showAtlasPins(pins);
+      atlasOn = true;
+      atlasBtn.setAttribute('aria-pressed', 'true');
+      $('atlasToggleLabel').textContent = 'Hide Noodle Atlas';
+      app.toast(placed
+        ? `Noodle Atlas: ${placed} shared stamp${placed === 1 ? '' : 's'} from fellow travelers.`
+        : 'The Noodle Atlas is empty so far — share a stamp to put up the first pin.',
+        { icon: 'fa-earth-asia' });
+    }catch(err){
+      console.warn('[cloud] atlas fetch failed', err);
+      app.toast('Could not load the Noodle Atlas — try again in a moment.',
+        { kind: 'error', icon: 'fa-triangle-exclamation' });
+    }finally{
+      atlasBtn.disabled = false;
+    }
+  });
+
+  /* ------------------------------------------------------------- startup */
+
+  // supabase-js resolves auth state changes while holding an internal lock;
+  // doing network calls directly inside the callback can deadlock, so the
+  // handler defers real work with setTimeout(0).
+  supabase.auth.onAuthStateChange((event, s) => {
+    session = s;
+    setTimeout(() => {
+      updateUi();
+      if(event === 'SIGNED_IN' || event === 'USER_UPDATED') syncNow({ force: true });
+      if(overlay.classList.contains('open')) refreshDialog();
+    }, 0);
+  });
+
+  const { data: { session: boot } } = await supabase.auth.getSession();
+  session = boot;
+  updateUi();
+  if(session) syncNow({ force: true });
 </script>
 </body>
 </html>

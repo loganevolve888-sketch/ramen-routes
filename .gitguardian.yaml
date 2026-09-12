@@ -1,0 +1,14 @@
+# ggshield (GitGuardian) configuration.
+#
+# The Supabase anon key is flagged by the generic JSON-Web-Token detector, but
+# it is the *publishable* client key: it ships in docs/index.html to every
+# visitor by design, grants only the `anon` role, and the security boundary is
+# Row Level Security (see supabase/*.sql) — same category as the Firebase
+# apiKey already public in this repo. The service_role key must NEVER get this
+# treatment; anything else ggshield finds is still a real incident.
+version: 2
+
+secret:
+  ignored_matches:
+    - match: df4b1f5d6eeb9b65eb6466d7af4977514b9db2b9a8c56a5341900bb2158a252c
+      name: Supabase anon key (public by design, RLS is the boundary)
