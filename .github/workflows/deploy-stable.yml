@@ -27,7 +27,7 @@ jobs:
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
               "set -e",
-              "git config --global --add safe.directory /var/www/html",
+              "git config --system --add safe.directory /var/www/html",
               "cd /var/www/html",
               "git fetch origin stable",
               "git reset --hard origin/stable",
