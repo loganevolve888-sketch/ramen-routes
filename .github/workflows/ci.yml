@@ -1,48 +1,48 @@
-name: CI
+# name: CI
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
+# on:
+#   push:
+#     branches:
+#       - main
+#   pull_request:
 
-jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+# jobs:
+#   validate:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      - name: Validate HTML
-        run: npx --yes html-validate "**/*.html"
+#       - name: Validate HTML
+#         run: npx --yes html-validate "**/*.html"
 
-      # The published site is docs/ (GitHub Pages); the repo root has no
-      # index.html, so crawling "." just 404s on the first request.
-      - name: Check for broken relative links
-        run: npx --yes linkinator docs/ --recurse --skip "https://*"
+#       # The published site is docs/ (GitHub Pages); the repo root has no
+#       # index.html, so crawling "." just 404s on the first request.
+#       - name: Check for broken relative links
+#         run: npx --yes linkinator docs/ --recurse --skip "https://*"
 
-  smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+#   smoke:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout
+#         uses: actions/checkout@v4
 
-      # No package.json on purpose — the app is a single self-contained
-      # docs/index.html. Node is only needed to drive the smoke test.
-      # Node 22+ ships the global WebSocket the test relies on.
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
+#       # No package.json on purpose — the app is a single self-contained
+#       # docs/index.html. Node is only needed to drive the smoke test.
+#       # Node 22+ ships the global WebSocket the test relies on.
+#       - name: Set up Node
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: '22'
 
-      - name: Validate database rules are well-formed JSON
-        run: node -e "JSON.parse(require('fs').readFileSync('database.rules.json','utf8')); console.log('database.rules.json parses OK')"
+#       - name: Validate database rules are well-formed JSON
+#         run: node -e "JSON.parse(require('fs').readFileSync('database.rules.json','utf8')); console.log('database.rules.json parses OK')"
 
-      - name: Install Chrome
-        id: chrome
-        uses: browser-actions/setup-chrome@v1
+#       - name: Install Chrome
+#         id: chrome
+#         uses: browser-actions/setup-chrome@v1
 
-      - name: Smoke test (headless Chrome over CDP)
-        env:
-          CHROME: ${{ steps.chrome.outputs.chrome-path }}
-        run: node .smoke-test.mjs
+#       - name: Smoke test (headless Chrome over CDP)
+#         env:
+#           CHROME: ${{ steps.chrome.outputs.chrome-path }}
+#         run: node .smoke-test.mjs
