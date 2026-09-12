@@ -3,3 +3,6 @@
 
 # OS noise
 .DS_Store
+
+# Added by ggshield
+.cache_ggshield

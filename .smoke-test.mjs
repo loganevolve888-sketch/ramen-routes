@@ -576,7 +576,7 @@ check('DESK: Kitchen TV has no YouTube iframe until play is pressed',
     const frame = facade.querySelector('iframe');
     return before
       && !!frame
-      && /youtube-nocookie\\.com\\/embed\\/qM1IbmEEjzA/.test(frame.src)
+      && frame.src.includes('youtube-nocookie.com/embed/' + facade.dataset.ytid)
       && /autoplay=1/.test(frame.src)
       && facade.querySelectorAll('iframe').length === 1;
   `));
