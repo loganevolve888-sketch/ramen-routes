@@ -26,6 +26,8 @@ jobs:
             --instance-ids "${{ secrets.AWS_EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --parameters 'commands=[
+              "set -e",
+              "git config --global --add safe.directory /var/www/html",
               "cd /var/www/html",
               "git fetch origin stable",
               "git reset --hard origin/stable",
@@ -40,6 +42,18 @@ jobs:
           aws ssm wait command-executed \
             --command-id "${{ steps.ssm.outputs.command_id }}" \
             --instance-id "${{ secrets.AWS_EC2_INSTANCE_ID }}"
+
+      - name: Fail the job if the SSM command didn't succeed
+        run: |
+          STATUS=$(aws ssm get-command-invocation \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ secrets.AWS_EC2_INSTANCE_ID }}" \
+            --query "Status" --output text)
+          echo "SSM command status: $STATUS"
+          if [ "$STATUS" != "Success" ]; then
+            echo "::error::Deploy command failed on the instance (status: $STATUS)"
+            exit 1
+          fi
 
       - name: Show command output
         if: always()

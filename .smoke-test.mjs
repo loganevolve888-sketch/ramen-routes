@@ -3,7 +3,7 @@
  * then exercises the flows that used to be broken.
  */
 import { spawn } from 'node:child_process';
-import { mkdtempSync, writeFileSync, readFileSync, createReadStream } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, createReadStream } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, extname } from 'node:path';
 import { createServer } from 'node:http';
@@ -785,6 +785,7 @@ await send('Page.navigate', { url: URL_UNDER_TEST });
 await sleep(4500);
 
 async function shot(file, opts = {}) {
+  mkdirSync('.shots', { recursive: true });
   if (opts.width) {
     await send('Emulation.setDeviceMetricsOverride', {
       width: opts.width, height: opts.height, deviceScaleFactor: 2,
